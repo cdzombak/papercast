@@ -157,7 +157,7 @@ func TestGoogleKeyPathRequiredUnlessEnvSet(t *testing.T) {
 	yaml := strings.Replace(validYAML, "  google_service_account_key_path: /data/gcp.json\n", "", 1)
 
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
-	os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+	_ = os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if _, err := Load(writeConfig(t, yaml)); err == nil || !strings.Contains(err.Error(), "google_service_account_key_path") {
 		t.Errorf("expected google_service_account_key_path error, got %v", err)
 	}

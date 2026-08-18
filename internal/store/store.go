@@ -205,7 +205,7 @@ func (s *Store) HaveList() ([]HaveItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var items []HaveItem
 	for rows.Next() {
 		var it HaveItem
@@ -234,7 +234,7 @@ func (s *Store) ListAll() ([]*Article, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var articles []*Article
 	for rows.Next() {
 		a, err := scanArticle(rows)

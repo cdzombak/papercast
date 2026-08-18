@@ -42,7 +42,7 @@ func TestRequestAccessToken(t *testing.T) {
 		if got := r.PostForm.Get("x_auth_mode"); got != "client_auth" {
 			t.Errorf("x_auth_mode = %q, want client_auth", got)
 		}
-		w.Write([]byte("oauth_token=returned-token&oauth_token_secret=returned-secret"))
+		_, _ = w.Write([]byte("oauth_token=returned-token&oauth_token_secret=returned-secret"))
 	}))
 	defer srv.Close()
 
@@ -65,7 +65,7 @@ func TestRequestAccessToken(t *testing.T) {
 
 func TestRequestAccessTokenMissingPair(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("oauth_token=only-token"))
+		_, _ = w.Write([]byte("oauth_token=only-token"))
 	})
 	_, err := c.RequestAccessToken(context.Background(), "u", "p")
 	if err == nil || !strings.Contains(err.Error(), "missing token pair") {
@@ -109,7 +109,7 @@ func TestListBookmarks(t *testing.T) {
 				if !strings.Contains(auth, `oauth_token="test-token"`) {
 					t.Errorf("Authorization header missing oauth_token: %q", auth)
 				}
-				w.Write([]byte("[" + tc.meta + listFixtureTail))
+				_, _ = w.Write([]byte("[" + tc.meta + listFixtureTail))
 			})
 			have := []HaveItem{{1, "abc"}, {2, "def"}, {3, ""}}
 			res, err := c.ListBookmarks(context.Background(), have, 500)
@@ -141,7 +141,7 @@ func TestListBookmarksEmptyHave(t *testing.T) {
 		if _, ok := r.PostForm["have"]; ok {
 			t.Errorf("have param present, want absent: %q", r.PostForm.Get("have"))
 		}
-		w.Write([]byte(`[{"type":"meta","delete_ids":""}]`))
+		_, _ = w.Write([]byte(`[{"type":"meta","delete_ids":""}]`))
 	})
 	res, err := c.ListBookmarks(context.Background(), nil, 500)
 	if err != nil {
@@ -154,7 +154,7 @@ func TestListBookmarksEmptyHave(t *testing.T) {
 
 func TestListBookmarksAPIError(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[{"type":"error","error_code":1041,"message":"Subscription required"}]`))
+		_, _ = w.Write([]byte(`[{"type":"error","error_code":1041,"message":"Subscription required"}]`))
 	})
 	_, err := c.ListBookmarks(context.Background(), nil, 500)
 	if err == nil {
@@ -198,7 +198,7 @@ func TestGetText(t *testing.T) {
 		if !strings.Contains(auth, `oauth_token="test-token"`) {
 			t.Errorf("Authorization header missing oauth_token: %q", auth)
 		}
-		w.Write([]byte(html))
+		_, _ = w.Write([]byte(html))
 	})
 	got, err := c.GetText(context.Background(), 101)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestGetText(t *testing.T) {
 func TestGetTextUnavailable(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`[{"type":"error","error_code":1550,"message":"Text not available"}]`))
+		_, _ = w.Write([]byte(`[{"type":"error","error_code":1550,"message":"Text not available"}]`))
 	})
 	_, err := c.GetText(context.Background(), 999)
 	if err == nil || !strings.Contains(err.Error(), "400") {

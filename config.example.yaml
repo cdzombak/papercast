@@ -1,0 +1,73 @@
+# papercast example configuration.
+# Copy to config.yaml and edit; pass the path via -config (default ./config.yaml).
+
+instapaper:
+  # OAuth consumer credentials for your registered Instapaper API application.
+  # Apply at https://www.instapaper.com/main/request_oauth_consumer_token
+  consumer_key: "your-consumer-key"
+  consumer_secret: "your-consumer-secret"
+  # Where the OAuth token obtained via -instapaper-login is stored.
+  credentials_path: "/data/instapaper-credentials.json"
+
+database:
+  # Path to the SQLite database file. The containing directory must be
+  # writable (SQLite creates -wal/-shm sidecar files next to it).
+  path: "/data/papercast.db"
+
+processing:
+  # Articles shorter than this many words are skipped permanently.
+  min_words: 200
+  # Minimum time between processing attempts for the same article.
+  retry_interval: 60m
+  # Total processing attempts per article before giving up on it.
+  max_attempts: 3
+
+# Optional: LLM-generated episode descriptions via an OpenAI-compatible API.
+# When disabled (the default), descriptions fall back to
+# '"Article Title" from example.com'.
+llm:
+  enabled: false
+  # Base URL of the API; papercast POSTs to <endpoint>/chat/completions.
+  endpoint: "https://api.openai.com/v1"
+  api_key: "sk-..."
+  model: "gpt-5.6-luna"
+  timeout: 60s
+  # Maximum article characters sent to the LLM; truncated at a block boundary.
+  max_input_chars: 60000
+
+tts:
+  # Service account key for Google Cloud Text-to-Speech (used via
+  # GOOGLE_APPLICATION_CREDENTIALS; may be omitted if that env var is set).
+  google_service_account_key_path: "/data/gcp-service-account.json"
+  # Chirp 3 HD voices to choose from; one is picked at random per article.
+  # See https://docs.cloud.google.com/text-to-speech/docs/chirp3-hd
+  voices:
+    - "en-US-Chirp3-HD-Aoede"
+    - "en-US-Chirp3-HD-Charon"
+    - "en-US-Chirp3-HD-Kore"
+    - "en-US-Chirp3-HD-Puck"
+  # Language code; must match the voices above.
+  language: "en-US"
+  # Speak a short introduction ("Title. From example.com.") before each article.
+  intro: true
+  # Send SSML instead of plain text (see the Chirp 3 HD SSML docs).
+  ssml: false
+  # Per-request payload budget in bytes (API limit is 5000; leave headroom).
+  max_chunk_bytes: 4500
+
+feed:
+  title: "My Instapaper Podcast"
+  # description: defaults to the feed title
+  language: "en-us"
+  author: "Your Name"
+  # Cover art URL; host this image yourself.
+  cover_art_url: "https://example.com/papercast/cover.jpg"
+  # Public base URL under which the output directory is served.
+  base_url: "https://example.com/papercast/"
+
+output:
+  # Directory where the feed and MP3s are written, to be served by your
+  # webserver. papercast also stages work-in-progress chunks in a
+  # .papercast-work subdirectory here.
+  dir: "/srv/papercast"
+  feed_filename: "feed.xml"

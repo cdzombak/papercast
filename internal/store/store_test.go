@@ -232,7 +232,7 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	if _, err := s2.Get(1); err != nil {
 		t.Errorf("data lost across reopen: %v", err)
 	}
