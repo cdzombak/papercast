@@ -47,15 +47,8 @@ func run() int {
 		return app.ExitSuccess
 	}
 
-	logger, err := newLogger(*logLevel)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return app.ExitFailure
-	}
-
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		logger.Error("configuration error", "error", err)
+	cfg, logger, ok := initCommand(*configPath, *logLevel)
+	if !ok {
 		return app.ExitFailure
 	}
 
@@ -74,32 +67,11 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	creds, err := instapaper.LoadCredentials(cfg.Instapaper.CredentialsPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			logger.Error("instapaper credentials not found; run with -instapaper-login first",
-				"path", cfg.Instapaper.CredentialsPath)
-		} else {
-			logger.Error("load instapaper credentials", "error", err)
-		}
+	a, closeStore, ok := buildApp(cfg, logger)
+	if !ok {
 		return app.ExitFailure
 	}
-	ipClient := instapaper.NewClient(cfg.Instapaper.ConsumerKey, cfg.Instapaper.ConsumerSecret, creds)
-
-	st, err := store.Open(cfg.Database.Path, nil)
-	if err != nil {
-		logger.Error("open database", "error", err)
-		return app.ExitFailure
-	}
-	defer func() { _ = st.Close() }()
-
-	a := &app.App{
-		Cfg:        cfg,
-		Store:      st,
-		Instapaper: ipClient,
-		Log:        logger,
-		Version:    version,
-	}
+	defer closeStore()
 
 	if *listArticles {
 		if err := a.ListArticles(ctx, os.Stdout); err != nil {
@@ -109,31 +81,11 @@ func run() int {
 		return app.ExitSuccess
 	}
 
-	// Processing (normal run and debug mode) needs TTS, audio tooling, and
-	// optionally the LLM describer.
-	if cfg.TTS.GoogleServiceAccountKeyPath != "" && os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
-		if err := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", cfg.TTS.GoogleServiceAccountKeyPath); err != nil {
-			logger.Error("set GOOGLE_APPLICATION_CREDENTIALS", "error", err)
-			return app.ExitFailure
-		}
-	}
-	synth, err := tts.NewGoogleSynthesizer(ctx)
-	if err != nil {
-		logger.Error("create text-to-speech client", "error", err)
+	closeTTS, ok := addProcessing(ctx, cfg, logger, a)
+	if !ok {
 		return app.ExitFailure
 	}
-	defer func() { _ = synth.Close() }()
-	a.Synth = tts.WithRetry(synth, tts.RetryOptions{})
-	a.Assembler = audio.NewFFmpegAssembler("", "")
-	if cfg.LLM.Enabled {
-		a.Describer = llm.NewDescriber(cfg.LLM.Endpoint, cfg.LLM.APIKey, cfg.LLM.Model,
-			cfg.LLM.Timeout.Std(), cfg.LLM.MaxInputChars)
-	}
-
-	if err := os.MkdirAll(cfg.Output.Dir, 0o755); err != nil {
-		logger.Error("create output directory", "error", err)
-		return app.ExitFailure
-	}
+	defer closeTTS()
 
 	if *debugID != "" {
 		id, err := strconv.ParseInt(*debugID, 10, 64)
@@ -149,6 +101,86 @@ func run() int {
 	}
 
 	return a.Run(ctx)
+}
+
+// initCommand builds the logger and loads the config. It reports its own
+// errors; on failure the caller should return app.ExitFailure.
+func initCommand(configPath, logLevel string) (*config.Config, *slog.Logger, bool) {
+	logger, err := newLogger(logLevel)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return nil, nil, false
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		logger.Error("configuration error", "error", err)
+		return nil, nil, false
+	}
+	return cfg, logger, true
+}
+
+// buildApp loads Instapaper credentials, opens the store, and assembles the
+// core App (no TTS/audio/LLM). It logs its own errors. The returned cleanup
+// closes the store and must be deferred when ok is true.
+func buildApp(cfg *config.Config, logger *slog.Logger) (a *app.App, cleanup func(), ok bool) {
+	creds, err := instapaper.LoadCredentials(cfg.Instapaper.CredentialsPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			logger.Error(`instapaper credentials not found; run "papercast instapaper-login" first`,
+				"path", cfg.Instapaper.CredentialsPath)
+		} else {
+			logger.Error("load instapaper credentials", "error", err)
+		}
+		return nil, nil, false
+	}
+	ipClient := instapaper.NewClient(cfg.Instapaper.ConsumerKey, cfg.Instapaper.ConsumerSecret, creds)
+
+	st, err := store.Open(cfg.Database.Path, nil)
+	if err != nil {
+		logger.Error("open database", "error", err)
+		return nil, nil, false
+	}
+
+	a = &app.App{
+		Cfg:        cfg,
+		Store:      st,
+		Instapaper: ipClient,
+		Log:        logger,
+		Version:    version,
+	}
+	return a, func() { _ = st.Close() }, true
+}
+
+// addProcessing attaches the TTS synthesizer, ffmpeg assembler, and optional
+// LLM describer to a, and creates the output directory. It logs its own
+// errors. The returned cleanup closes the TTS client and must be deferred
+// when ok is true.
+func addProcessing(ctx context.Context, cfg *config.Config, logger *slog.Logger, a *app.App) (cleanup func(), ok bool) {
+	if cfg.TTS.GoogleServiceAccountKeyPath != "" && os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
+		if err := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", cfg.TTS.GoogleServiceAccountKeyPath); err != nil {
+			logger.Error("set GOOGLE_APPLICATION_CREDENTIALS", "error", err)
+			return nil, false
+		}
+	}
+	synth, err := tts.NewGoogleSynthesizer(ctx)
+	if err != nil {
+		logger.Error("create text-to-speech client", "error", err)
+		return nil, false
+	}
+	a.Synth = tts.WithRetry(synth, tts.RetryOptions{})
+	a.Assembler = audio.NewFFmpegAssembler("", "")
+	if cfg.LLM.Enabled {
+		a.Describer = llm.NewDescriber(cfg.LLM.Endpoint, cfg.LLM.APIKey, cfg.LLM.Model,
+			cfg.LLM.Timeout.Std(), cfg.LLM.MaxInputChars)
+	}
+
+	if err := os.MkdirAll(cfg.Output.Dir, 0o755); err != nil {
+		logger.Error("create output directory", "error", err)
+		_ = synth.Close()
+		return nil, false
+	}
+	return func() { _ = synth.Close() }, true
 }
 
 func newLogger(level string) (*slog.Logger, error) {
