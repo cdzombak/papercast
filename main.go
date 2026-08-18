@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -29,39 +30,165 @@ import (
 
 var version = "<dev>"
 
+// exitUsage is returned for invalid command lines (unknown command, bad flags).
+const exitUsage = 2
+
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Args[1:]))
 }
 
-func run() int {
-	configPath := flag.String("config", "./config.yaml", "path to the config YAML file")
-	debugID := flag.String("debug", "", "run debug mode for the given article (Instapaper bookmark) ID")
-	listArticles := flag.Bool("list-articles", false, "sync with Instapaper, list known articles, and exit")
-	login := flag.Bool("instapaper-login", false, "interactively authenticate with Instapaper and save credentials")
-	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, or error")
-	showVersion := flag.Bool("version", false, "print the version and exit")
-	flag.Parse()
-
-	if *showVersion {
+func run(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "papercast: a command is required")
+		printUsage(os.Stderr)
+		return exitUsage
+	}
+	switch args[0] {
+	case "generate":
+		return cmdGenerate(args[1:])
+	case "list-articles":
+		return cmdListArticles(args[1:])
+	case "debug":
+		return cmdDebug(args[1:])
+	case "instapaper-login":
+		return cmdLogin(args[1:])
+	case "version", "-version", "--version":
 		fmt.Println("papercast " + version)
 		return app.ExitSuccess
+	case "help", "-h", "-help", "--help":
+		return cmdHelp(args[1:])
+	default:
+		return unknownCommand(args[0])
+	}
+}
+
+// oldFlagHints maps former top-level mode/option flags to migration hints.
+var oldFlagHints = map[string]string{
+	"debug":            `use "papercast debug -id <bookmark-id>"`,
+	"list-articles":    `use "papercast list-articles"`,
+	"instapaper-login": `use "papercast instapaper-login"`,
+	"config":           `flags now follow a command, e.g. "papercast generate -config config.yaml"`,
+	"log-level":        `flags now follow a command, e.g. "papercast generate -log-level debug"`,
+}
+
+func unknownCommand(arg string) int {
+	if strings.HasPrefix(arg, "-") {
+		name := strings.TrimLeft(arg, "-")
+		name, _, _ = strings.Cut(name, "=")
+		if hint, ok := oldFlagHints[name]; ok {
+			fmt.Fprintf(os.Stderr, "papercast: %s is no longer a top-level flag; %s\n", arg, hint)
+		} else {
+			fmt.Fprintf(os.Stderr, "papercast: unknown flag %s (papercast now uses subcommands)\n", arg)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "papercast: unknown command %q\n", arg)
+	}
+	fmt.Fprintln(os.Stderr, `Run "papercast help" for usage.`)
+	return exitUsage
+}
+
+func cmdHelp(args []string) int {
+	if len(args) == 0 {
+		printUsage(os.Stdout)
+		return app.ExitSuccess
+	}
+	switch args[0] {
+	case "generate":
+		return cmdGenerate([]string{"-h"})
+	case "list-articles":
+		return cmdListArticles([]string{"-h"})
+	case "debug":
+		return cmdDebug([]string{"-h"})
+	case "instapaper-login":
+		return cmdLogin([]string{"-h"})
+	case "version":
+		fmt.Println("Usage: papercast version\n\nPrint the papercast version and exit.")
+		return app.ExitSuccess
+	case "help":
+		printUsage(os.Stdout)
+		return app.ExitSuccess
+	default:
+		fmt.Fprintf(os.Stderr, "papercast help: unknown command %q\n", args[0])
+		printUsage(os.Stderr)
+		return exitUsage
+	}
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprint(w, `papercast creates an RSS podcast feed from unread Instapaper articles.
+
+Usage:
+
+  papercast <command> [flags]
+
+Commands:
+
+  generate          sync with Instapaper, narrate new articles, and write the feed
+  list-articles     sync with Instapaper, list known articles, and exit
+  debug             reprocess one article and write debug output to the work directory
+  instapaper-login  interactively authenticate with Instapaper and save credentials
+  version           print the version and exit
+  help [command]    print usage for papercast or a single command
+
+Run "papercast help <command>" for details on a command's flags.
+`)
+}
+
+// addCommonFlags registers the -config and -log-level flags shared by every command.
+func addCommonFlags(fs *flag.FlagSet) (configPath, logLevel *string) {
+	configPath = fs.String("config", "./config.yaml", "path to the config YAML file")
+	logLevel = fs.String("log-level", "info", "log level: debug, info, warn, or error")
+	return configPath, logLevel
+}
+
+// usageFor returns a usage printer for fs: synopsis, then the flag defaults.
+func usageFor(fs *flag.FlagSet, synopsis string) func(io.Writer) {
+	return func(w io.Writer) {
+		fmt.Fprintf(w, "%s\n\nFlags:\n", synopsis)
+		fs.SetOutput(w)
+		fs.PrintDefaults()
+		fs.SetOutput(os.Stderr)
+	}
+}
+
+// parseFlags parses args into fs. It returns (exit, true) when the command
+// should stop immediately: exit 0 after -h/--help (usage printed to stdout),
+// exit 2 on a parse error or unexpected positional argument (error and usage
+// printed to stderr). Returns (0, false) when parsing succeeded.
+func parseFlags(fs *flag.FlagSet, args []string, usage func(io.Writer)) (int, bool) {
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {}
+	err := fs.Parse(args)
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		usage(os.Stdout)
+		return app.ExitSuccess, true
+	case err != nil:
+		usage(os.Stderr)
+		return exitUsage, true
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "papercast %s: unexpected argument %q\n", fs.Name(), fs.Arg(0))
+		usage(os.Stderr)
+		return exitUsage, true
+	}
+	return 0, false
+}
+
+func cmdGenerate(args []string) int {
+	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
+	configPath, logLevel := addCommonFlags(fs)
+	usage := usageFor(fs, `Usage: papercast generate [flags]
+
+Sync with Instapaper, narrate new articles, and write the feed and MP3s to the
+output directory.`)
+	if exit, done := parseFlags(fs, args, usage); done {
+		return exit
 	}
 
 	cfg, logger, ok := initCommand(*configPath, *logLevel)
 	if !ok {
 		return app.ExitFailure
-	}
-
-	if *login {
-		// Deliberately not using signal.NotifyContext here: it intercepts
-		// SIGINT and turns off the default kill-the-process behavior, but
-		// nothing in the blocking stdin prompts below would ever observe
-		// context cancellation, so Ctrl-C would appear to do nothing.
-		if err := runLogin(context.Background(), cfg); err != nil {
-			logger.Error("instapaper login failed", "error", err)
-			return app.ExitFailure
-		}
-		return app.ExitSuccess
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -73,13 +200,82 @@ func run() int {
 	}
 	defer closeStore()
 
-	if *listArticles {
-		if err := a.ListArticles(ctx, os.Stdout); err != nil {
-			logger.Error("list articles failed", "error", err)
-			return app.ExitFailure
-		}
-		return app.ExitSuccess
+	closeTTS, ok := addProcessing(ctx, cfg, logger, a)
+	if !ok {
+		return app.ExitFailure
 	}
+	defer closeTTS()
+
+	return a.Run(ctx)
+}
+
+func cmdListArticles(args []string) int {
+	fs := flag.NewFlagSet("list-articles", flag.ContinueOnError)
+	configPath, logLevel := addCommonFlags(fs)
+	usage := usageFor(fs, `Usage: papercast list-articles [flags]
+
+Sync with Instapaper, list each known article's ID, source, and title, and exit.`)
+	if exit, done := parseFlags(fs, args, usage); done {
+		return exit
+	}
+
+	cfg, logger, ok := initCommand(*configPath, *logLevel)
+	if !ok {
+		return app.ExitFailure
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	a, closeStore, ok := buildApp(cfg, logger)
+	if !ok {
+		return app.ExitFailure
+	}
+	defer closeStore()
+
+	if err := a.ListArticles(ctx, os.Stdout); err != nil {
+		logger.Error("list articles failed", "error", err)
+		return app.ExitFailure
+	}
+	return app.ExitSuccess
+}
+
+func cmdDebug(args []string) int {
+	fs := flag.NewFlagSet("debug", flag.ContinueOnError)
+	configPath, logLevel := addCommonFlags(fs)
+	idArg := fs.String("id", "", "Instapaper bookmark ID of the article to debug")
+	usage := usageFor(fs, `Usage: papercast debug -id <bookmark-id> [flags]
+
+Reprocess a single article and write a chunk-by-chunk debug HTML file plus the
+assembled MP3 into the work directory. Nothing is published, and the run does
+not count against the article's retry budget.`)
+	if exit, done := parseFlags(fs, args, usage); done {
+		return exit
+	}
+	if *idArg == "" {
+		fmt.Fprintln(os.Stderr, "papercast debug: -id is required")
+		usage(os.Stderr)
+		return exitUsage
+	}
+	id, err := strconv.ParseInt(*idArg, 10, 64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "papercast debug: invalid -id %q (expected a numeric Instapaper bookmark ID)\n", *idArg)
+		return exitUsage
+	}
+
+	cfg, logger, ok := initCommand(*configPath, *logLevel)
+	if !ok {
+		return app.ExitFailure
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	a, closeStore, ok := buildApp(cfg, logger)
+	if !ok {
+		return app.ExitFailure
+	}
+	defer closeStore()
 
 	closeTTS, ok := addProcessing(ctx, cfg, logger, a)
 	if !ok {
@@ -87,20 +283,38 @@ func run() int {
 	}
 	defer closeTTS()
 
-	if *debugID != "" {
-		id, err := strconv.ParseInt(*debugID, 10, 64)
-		if err != nil {
-			logger.Error("invalid -debug article ID", "value", *debugID)
-			return app.ExitFailure
-		}
-		if err := a.Debug(ctx, id); err != nil {
-			logger.Error("debug run failed", "error", err)
-			return app.ExitFailure
-		}
-		return app.ExitSuccess
+	if err := a.Debug(ctx, id); err != nil {
+		logger.Error("debug run failed", "error", err)
+		return app.ExitFailure
+	}
+	return app.ExitSuccess
+}
+
+func cmdLogin(args []string) int {
+	fs := flag.NewFlagSet("instapaper-login", flag.ContinueOnError)
+	configPath, logLevel := addCommonFlags(fs)
+	usage := usageFor(fs, `Usage: papercast instapaper-login [flags]
+
+Interactively authenticate with Instapaper and save the resulting OAuth token
+to the path configured at instapaper.credentials_path.`)
+	if exit, done := parseFlags(fs, args, usage); done {
+		return exit
 	}
 
-	return a.Run(ctx)
+	cfg, logger, ok := initCommand(*configPath, *logLevel)
+	if !ok {
+		return app.ExitFailure
+	}
+
+	// Deliberately not using signal.NotifyContext here: it intercepts
+	// SIGINT and turns off the default kill-the-process behavior, but
+	// nothing in the blocking stdin prompts below would ever observe
+	// context cancellation, so Ctrl-C would appear to do nothing.
+	if err := runLogin(context.Background(), cfg); err != nil {
+		logger.Error("instapaper login failed", "error", err)
+		return app.ExitFailure
+	}
+	return app.ExitSuccess
 }
 
 // initCommand builds the logger and loads the config. It reports its own
