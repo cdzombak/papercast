@@ -26,6 +26,8 @@ Copy [`config.example.yaml`](config.example.yaml) to `config.yaml` and edit it. 
 
 Every field is explained by comments in the example file.
 
+Fill in the whole file before going any further. Every mode of operation, including `-instapaper-login` and `-list-articles`, validates the entire config at startup and exits if anything is missing.
+
 ### 2. Log in to Instapaper
 
 Run once, interactively:
