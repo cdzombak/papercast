@@ -115,7 +115,7 @@ func cmdHelp(args []string) int {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `papercast creates an RSS podcast feed from unread Instapaper articles.
+	_, _ = fmt.Fprint(w, `papercast creates an RSS podcast feed from unread Instapaper articles.
 
 Usage:
 
@@ -144,7 +144,7 @@ func addCommonFlags(fs *flag.FlagSet) (configPath, logLevel *string) {
 // usageFor returns a usage printer for fs: synopsis, then the flag defaults.
 func usageFor(fs *flag.FlagSet, synopsis string) func(io.Writer) {
 	return func(w io.Writer) {
-		fmt.Fprintf(w, "%s\n\nFlags:\n", synopsis)
+		_, _ = fmt.Fprintf(w, "%s\n\nFlags:\n", synopsis)
 		fs.SetOutput(w)
 		fs.PrintDefaults()
 		fs.SetOutput(os.Stderr)
