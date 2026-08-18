@@ -563,6 +563,69 @@ func TestDescriptionsStoredAndRetried(t *testing.T) {
 	}
 }
 
+func TestDescriptionsNotRetriedForExhaustedArticles(t *testing.T) {
+	f := newFixture(t)
+	f.app.Cfg.Processing.MaxAttempts = 1
+	desc := &fakeDescriber{err: fmt.Errorf("llm down")}
+	f.app.Describer = desc
+	f.queueBookmarks(bm(1, "Cursed"))
+	f.ip.texts[1] = longHTML
+	f.synth.err = fmt.Errorf("tts permanently broken")
+
+	if code := f.app.Run(context.Background()); code != ExitFailure {
+		t.Fatalf("first run exit = %d, want 1", code)
+	}
+	describeCalls := desc.calls
+	if describeCalls == 0 {
+		t.Fatal("description was never attempted")
+	}
+
+	// The article has given up; its description is not attempted again.
+	f.now = f.now.Add(24 * time.Hour)
+	if code := f.app.Run(context.Background()); code != ExitSuccess {
+		t.Fatalf("second run exit = %d, want 0", code)
+	}
+	if desc.calls != describeCalls {
+		t.Errorf("description retried for an exhausted article: %d extra calls",
+			desc.calls-describeCalls)
+	}
+}
+
+func TestDescriptionsRetriedForPublishedArticleThatUsedAllAttempts(t *testing.T) {
+	f := newFixture(t)
+	f.app.Cfg.Processing.MaxAttempts = 2
+	desc := &fakeDescriber{err: fmt.Errorf("llm down")}
+	f.app.Describer = desc
+	f.queueBookmarks(bm(1, "Eventually Fine"))
+	f.ip.texts[1] = longHTML
+	f.asm.concatErr = fmt.Errorf("disk full")
+
+	if code := f.app.Run(context.Background()); code != ExitFailure {
+		t.Fatalf("first run exit = %d, want 1", code)
+	}
+	// Second run publishes on the article's last attempt.
+	f.asm.concatErr = nil
+	f.now = f.now.Add(2 * time.Hour)
+	if code := f.app.Run(context.Background()); code != ExitSuccess {
+		t.Fatalf("second run exit = %d, want 0", code)
+	}
+	art, _ := f.store.Get(1)
+	if !art.Published() || art.Attempts != 2 {
+		t.Fatalf("article state: published=%v attempts=%d", art.Published(), art.Attempts)
+	}
+
+	// Published, so its description is still worth retrying.
+	desc.err = nil
+	desc.result = "A thoughtful summary."
+	f.now = f.now.Add(2 * time.Hour)
+	if code := f.app.Run(context.Background()); code != ExitSuccess {
+		t.Fatalf("third run exit = %d, want 0", code)
+	}
+	if !strings.Contains(readFeed(t, f), "<![CDATA[A thoughtful summary.]]>") {
+		t.Error("feed missing description retried for a published episode")
+	}
+}
+
 func TestVoicePersistsAcrossRetries(t *testing.T) {
 	f := newFixture(t)
 	f.app.Cfg.TTS.Voices = []string{"en-US-Chirp3-HD-Aoede", "en-US-Chirp3-HD-Puck"}

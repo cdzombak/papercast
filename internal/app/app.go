@@ -247,7 +247,8 @@ func (a *App) considerArticle(art *store.Article) decision {
 }
 
 // retryDescriptions attempts LLM descriptions for any article that has content
-// but no stored description (including already-published episodes).
+// but no stored description (including already-published episodes, whose feed
+// entries are updated once a description succeeds).
 func (a *App) retryDescriptions(ctx context.Context) {
 	if a.Describer == nil {
 		return
@@ -259,6 +260,11 @@ func (a *App) retryDescriptions(ctx context.Context) {
 	}
 	for _, art := range articles {
 		if art.RejectedTooShort || art.HTML == nil || art.Description != nil {
+			continue
+		}
+		// An unpublished article that exhausted its attempts will never make
+		// it into the feed, so its description would never be read.
+		if !art.Published() && art.Attempts >= a.Cfg.Processing.MaxAttempts {
 			continue
 		}
 		if err := a.describeAndStore(ctx, art); err != nil {
