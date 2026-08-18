@@ -670,6 +670,17 @@ func TestIntroDisabled(t *testing.T) {
 	}
 }
 
+func TestFallbackDescriptionQuoting(t *testing.T) {
+	art := &store.Article{
+		Title: `The "Best" C:\Path Article`,
+		URL:   "https://www.example.com/a",
+	}
+	want := `"The "Best" C:\Path Article" from example.com`
+	if got := FallbackDescription(art); got != want {
+		t.Errorf("FallbackDescription = %s, want %s", got, want)
+	}
+}
+
 func TestListArticles(t *testing.T) {
 	f := newFixture(t)
 	f.queueBookmarks(bm(1, "Listed Article"))

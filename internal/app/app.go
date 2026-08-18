@@ -340,5 +340,7 @@ func (a *App) episodeDescription(art *store.Article) string {
 
 // FallbackDescription is used when no LLM description is available.
 func FallbackDescription(art *store.Article) string {
-	return fmt.Sprintf("%q from %s", art.Title, art.Domain())
+	// Not %q: that escapes quotes and backslashes in the title Go-style,
+	// which would show up verbatim in podcast clients.
+	return fmt.Sprintf(`"%s" from %s`, art.Title, art.Domain())
 }
