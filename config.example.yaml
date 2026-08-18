@@ -1,12 +1,13 @@
 # papercast example configuration.
-# Copy to config.yaml and edit; pass the path via -config (default ./config.yaml).
+# Copy to config.yaml and edit; pass the path via each command's -config flag
+# (default ./config.yaml).
 
 instapaper:
   # OAuth consumer credentials for your registered Instapaper API application.
   # Apply at https://www.instapaper.com/main/request_oauth_consumer_token
   consumer_key: "your-consumer-key"
   consumer_secret: "your-consumer-secret"
-  # Where the OAuth token obtained via -instapaper-login is stored.
+  # Where the OAuth token obtained via "papercast instapaper-login" is stored.
   credentials_path: "/data/instapaper-credentials.json"
 
 database:

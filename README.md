@@ -16,7 +16,7 @@ It's designed to run from cron; nothing is interactive after the one-time Instap
 
 Copy [`config.example.yaml`](config.example.yaml) to `config.yaml` and edit it. The file is organized into sections:
 
-- `instapaper`: your OAuth consumer key/secret, plus where to store the token from `-instapaper-login`
+- `instapaper`: your OAuth consumer key/secret, plus where to store the token from `papercast instapaper-login`
 - `database`: path to the SQLite database
 - `processing`: minimum article length, retry interval, and attempt limit
 - `llm`: optional LLM-generated episode descriptions (disabled by default)
@@ -31,17 +31,17 @@ Every field is explained by comments in the example file.
 Run once, interactively:
 
 ```shell
-papercast -instapaper-login -config /path/to/config.yaml
+papercast instapaper-login -config /path/to/config.yaml
 ```
 
 This prompts for your Instapaper username and password, exchanges them via xAuth for a permanent OAuth token, and stores that token (with `0600` permissions) at `instapaper.credentials_path`. Your password is not stored.
 
 ### 3. Run from cron
 
-Run `papercast -config …` periodically. Overlap protection is your job; on Linux, `flock` handles it:
+Run `papercast generate -config …` periodically. Overlap protection is your job; on Linux, `flock` handles it:
 
 ```crontab
-*/30 * * * * flock -n /tmp/papercast.lock papercast -config /etc/papercast/config.yaml
+*/30 * * * * flock -n /tmp/papercast.lock papercast generate -config /etc/papercast/config.yaml
 ```
 
 papercast is idempotent: each run picks up where the last left off, retrying failed articles up to `processing.max_attempts` times, spaced at least `processing.retry_interval` apart.
@@ -50,6 +50,7 @@ Exit codes:
 
 - `0`: success
 - `1`: fatal error, or a failure affecting all articles (e.g. Instapaper sync failed, or every article failed processing)
+- `2`: invalid command line (unknown command or flag)
 - `8`: partial success (some articles failed, others succeeded)
 
 ### 4. Serve the output
@@ -68,7 +69,7 @@ docker run --rm \
   -v /etc/papercast/data:/data \
   -v /var/www/papercast:/srv/papercast \
   cdzombak/papercast:1 \
-  -config /config.yaml
+  generate -config /config.yaml
 ```
 
 (This assumes your config points the credentials and database paths under `/data` and the output directory at `/srv/papercast`, as the example config does.)
@@ -82,16 +83,17 @@ docker run --rm -it \
   -v /etc/papercast/config.yaml:/config.yaml:ro \
   -v /etc/papercast/data:/data \
   cdzombak/papercast:1 \
-  -instapaper-login -config /config.yaml
+  instapaper-login -config /config.yaml
 ```
 
-## Other flags
+## Other commands
 
-- `-list-articles`: sync with Instapaper, list each article's ID, source, and title, and exit
-- `-debug <article-id>`: reprocess a single article and write a chunk-by-chunk debug HTML file (the exact text/SSML sent to the TTS API, with playable audio for each chunk) plus the assembled MP3 into the work directory. Nothing is published, and the run doesn't count against the article's retry budget.
-- `-log-level`: `debug`, `info` (default), `warn`, or `error`
-- `-version`: print the version and exit
-- `-help`: print usage and exit
+- `list-articles`: sync with Instapaper, list each article's ID, source, and title, and exit
+- `debug -id <article-id>`: reprocess a single article and write a chunk-by-chunk debug HTML file (the exact text/SSML sent to the TTS API, with playable audio for each chunk) plus the assembled MP3 into the work directory. Nothing is published, and the run doesn't count against the article's retry budget.
+- `version`: print the version and exit
+- `help [command]`: print usage for papercast or a single command
+
+Every command accepts `-config` (default `./config.yaml`) and `-log-level` (`debug`, `info` (default), `warn`, or `error`); `papercast <command> -h` shows a command's flags.
 
 ## Behavior notes
 
