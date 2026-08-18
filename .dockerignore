@@ -1,0 +1,15 @@
+# Mirrors .gitignore: local state, credentials, and build products must never
+# reach the build context.
+/out/
+*.db
+*.db-shm
+*.db-wal
+config.yaml
+.DS_Store
+/tmp/
+
+# Not needed to build the binary.
+.git/
+.github/
+.idea/
+specs/
