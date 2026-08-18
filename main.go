@@ -59,16 +59,20 @@ func run() int {
 		return app.ExitFailure
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	if *login {
-		if err := runLogin(ctx, cfg); err != nil {
+		// Deliberately not using signal.NotifyContext here: it intercepts
+		// SIGINT and turns off the default kill-the-process behavior, but
+		// nothing in the blocking stdin prompts below would ever observe
+		// context cancellation, so Ctrl-C would appear to do nothing.
+		if err := runLogin(context.Background(), cfg); err != nil {
 			logger.Error("instapaper login failed", "error", err)
 			return app.ExitFailure
 		}
 		return app.ExitSuccess
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	creds, err := instapaper.LoadCredentials(cfg.Instapaper.CredentialsPath)
 	if err != nil {
