@@ -53,11 +53,15 @@ func (f *fakeInstapaper) GetText(_ context.Context, id int64) (string, error) {
 }
 
 type fakeSynth struct {
-	calls []tts.Request
-	err   error // when set, every Synthesize call fails
+	calls  []tts.Request
+	err    error  // when set, every Synthesize call fails
+	onCall func() // when set, called at the start of every Synthesize
 }
 
 func (f *fakeSynth) Synthesize(_ context.Context, req tts.Request) ([]byte, error) {
+	if f.onCall != nil {
+		f.onCall()
+	}
 	f.calls = append(f.calls, req)
 	if f.err != nil {
 		return nil, f.err
@@ -450,6 +454,44 @@ func TestAttemptsExhaustedCountsOnceThenQuiet(t *testing.T) {
 	art, _ := f.store.Get(1)
 	if art.Attempts != 2 {
 		t.Errorf("attempts = %d, want 2", art.Attempts)
+	}
+}
+
+func TestInterruptedRunDoesNotConsumeAnAttempt(t *testing.T) {
+	f := newFixture(t)
+	first, second := bm(1, "Interrupted"), bm(2, "Untouched")
+	second.SavedAt = first.SavedAt.Add(-time.Hour) // sorts after the first
+	f.queueBookmarks(first, second)
+	f.ip.texts[1] = longHTML
+	f.ip.texts[2] = longHTML
+
+	// Interrupt the run part-way through the first article's synthesis.
+	ctx, cancel := context.WithCancel(context.Background())
+	f.synth.onCall = cancel
+	f.synth.err = context.Canceled
+
+	if code := f.app.Run(ctx); code != ExitSuccess {
+		t.Fatalf("exit code = %d, want 0 (an interrupt is not an article failure)", code)
+	}
+
+	art, err := f.store.Get(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if art.Attempts != 0 || art.LastAttemptAt != nil {
+		t.Errorf("interrupted article consumed an attempt: attempts=%d last_attempt=%v",
+			art.Attempts, art.LastAttemptAt)
+	}
+	// Cached chunks survive so the next run can resume.
+	if _, err := os.Stat(f.app.workDir(1)); err != nil {
+		t.Errorf("work dir removed after interrupt: %v", err)
+	}
+	// The run stops instead of marching through the remaining articles.
+	if len(f.synth.calls) != 1 {
+		t.Errorf("synth calls = %d, want 1", len(f.synth.calls))
+	}
+	if f.ip.getCalls != 1 {
+		t.Errorf("get_text calls = %d, want 1", f.ip.getCalls)
 	}
 }
 

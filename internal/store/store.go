@@ -290,6 +290,18 @@ func (s *Store) RecordAttempt(id int64, at time.Time) error {
 		at.Unix())
 }
 
+// RestoreAttempt resets an article's attempt counter and last-attempt time to
+// the given values, undoing a RecordAttempt.
+func (s *Store) RestoreAttempt(id int64, attempts int, at *time.Time) error {
+	var atUnix sql.NullInt64
+	if at != nil {
+		atUnix = sql.NullInt64{Int64: at.Unix(), Valid: true}
+	}
+	return s.update(id,
+		"UPDATE articles SET attempts = ?, last_attempt_unix = ?, updated_at_unix = ? WHERE bookmark_id = ?",
+		attempts, atUnix)
+}
+
 // MarkPublished records a successfully published episode.
 func (s *Store) MarkPublished(id int64, mp3Filename string, sizeBytes, durationSecs int64) error {
 	return s.update(id,

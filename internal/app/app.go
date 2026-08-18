@@ -162,6 +162,11 @@ func (a *App) Run(ctx context.Context) int {
 
 	var succeeded, rejected, failed int
 	for _, art := range articles {
+		if ctx.Err() != nil {
+			a.Log.Warn("run interrupted; remaining articles will be processed next run",
+				"error", ctx.Err())
+			break
+		}
 		switch a.considerArticle(art) {
 		case decisionSkip:
 			continue
@@ -176,6 +181,14 @@ func (a *App) Run(ctx context.Context) int {
 		case isRejection(err):
 			log.Info("article rejected as too short")
 			rejected++
+		case ctx.Err() != nil:
+			// Interrupted part-way through, which says nothing about the
+			// article: give back the attempt it just consumed, leave its
+			// cached chunks in place, and don't count it as a failure.
+			log.Warn("article processing interrupted; attempt not counted", "error", err)
+			if err := a.Store.RestoreAttempt(art.BookmarkID, art.Attempts, art.LastAttemptAt); err != nil {
+				log.Warn("failed to restore attempt counter", "error", err)
+			}
 		default:
 			log.Error("article processing failed", "error", err, "attempts", art.Attempts+1)
 			failed++
@@ -185,10 +198,6 @@ func (a *App) Run(ctx context.Context) int {
 					log.Warn("failed to remove work dir", "error", err)
 				}
 			}
-		}
-		if ctx.Err() != nil {
-			a.Log.Error("run interrupted", "error", ctx.Err())
-			break
 		}
 	}
 
