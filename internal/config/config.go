@@ -38,6 +38,7 @@ type Config struct {
 	LLM        LLMConfig        `yaml:"llm"`
 	TTS        TTSConfig        `yaml:"tts"`
 	Feed       FeedConfig       `yaml:"feed"`
+	Archiver   ArchiverConfig   `yaml:"archiver"`
 	Output     OutputConfig     `yaml:"output"`
 }
 
@@ -89,6 +90,12 @@ type FeedConfig struct {
 	Author      string `yaml:"author"`
 	CoverArtURL string `yaml:"cover_art_url"`
 	BaseURL     string `yaml:"base_url"`
+}
+
+// ArchiverConfig configures the optional papercast-archiver integration,
+// enabled by setting BaseURL.
+type ArchiverConfig struct {
+	BaseURL string `yaml:"base_url"`
 }
 
 type OutputConfig struct {
@@ -159,6 +166,7 @@ func (c *Config) applyDefaults() {
 	if c.Feed.Description == "" {
 		c.Feed.Description = c.Feed.Title
 	}
+	c.Archiver.BaseURL = strings.TrimRight(c.Archiver.BaseURL, "/")
 	if c.Output.FeedFilename == "" {
 		c.Output.FeedFilename = DefaultFeedFilename
 	}
@@ -184,6 +192,13 @@ func (c *Config) validate() error {
 		u, err := url.Parse(c.Feed.BaseURL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			errs = append(errs, "feed.base_url must be an absolute http(s) URL")
+		}
+	}
+
+	if c.Archiver.BaseURL != "" {
+		u, err := url.Parse(c.Archiver.BaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+			errs = append(errs, "archiver.base_url must be an absolute http(s) URL without query or fragment")
 		}
 	}
 

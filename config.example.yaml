@@ -68,6 +68,13 @@ feed:
   # Public base URL under which the output directory is served.
   base_url: "https://example.com/papercast/"
 
+# Optional: papercast-archiver integration
+# (https://github.com/cdzombak/papercast-archiver). When base_url is set,
+# each episode's description ends with an "Archive or Delete this article
+# in Instapaper" link pointing at your archiver instance.
+archiver:
+  base_url: ""
+
 output:
   # Directory where the feed and MP3s are written, to be served by your
   # webserver. papercast also stages work-in-progress chunks in a

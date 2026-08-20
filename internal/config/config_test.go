@@ -68,6 +68,9 @@ func TestLoadValidAppliesDefaults(t *testing.T) {
 	if !cfg.TTS.IntroEnabled() {
 		t.Error("intro should default to enabled")
 	}
+	if cfg.Archiver.BaseURL != "" {
+		t.Errorf("Archiver.BaseURL = %q, want empty (disabled by default)", cfg.Archiver.BaseURL)
+	}
 	if cfg.Feed.Description != "My Articles" {
 		t.Errorf("feed description should default to title, got %q", cfg.Feed.Description)
 	}
@@ -127,6 +130,17 @@ func TestSpeedOverride(t *testing.T) {
 	}
 }
 
+func TestArchiverBaseURL(t *testing.T) {
+	yaml := validYAML + "\narchiver:\n  base_url: https://archiver.example.com/prefix/\n"
+	cfg, err := Load(writeConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Archiver.BaseURL != "https://archiver.example.com/prefix" {
+		t.Errorf("Archiver.BaseURL = %q, want trailing slash trimmed", cfg.Archiver.BaseURL)
+	}
+}
+
 func TestValidationErrors(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -149,6 +163,12 @@ func TestValidationErrors(t *testing.T) {
 		{"speed too fast", func(s string) string {
 			return strings.Replace(s, "tts:\n", "tts:\n  speed: 2.5\n", 1)
 		}, "tts.speed must be between 0.25 and 2.0"},
+		{"archiver bad url", func(s string) string {
+			return s + "\narchiver:\n  base_url: not a url\n"
+		}, "archiver.base_url"},
+		{"archiver url with query", func(s string) string {
+			return s + "\narchiver:\n  base_url: https://archiver.example.com/?q=1\n"
+		}, "archiver.base_url"},
 		{"llm enabled without model", func(s string) string {
 			return s + "\nllm:\n  enabled: true\n  endpoint: https://api.openai.com/v1\n"
 		}, "llm.model"},

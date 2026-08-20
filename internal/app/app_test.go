@@ -238,6 +238,11 @@ func TestRunHappyPath(t *testing.T) {
 		}
 	}
 
+	// No archiver configured, so no archiver link.
+	if strings.Contains(xml, "Archive or Delete") {
+		t.Error("archiver link present without archiver config")
+	}
+
 	// The spoken intro leads the first chunk.
 	if len(f.synth.calls) == 0 || !strings.HasPrefix(f.synth.calls[0].Payload, "First Article. From example.com.") &&
 		!strings.HasPrefix(f.synth.calls[0].Payload, "Second Article. From example.com.") {
@@ -673,6 +678,36 @@ func TestIntroDisabled(t *testing.T) {
 	}
 	if strings.Contains(f.synth.calls[0].Payload, "No Intro. From example.com.") {
 		t.Error("intro present despite being disabled")
+	}
+}
+
+func TestArchiverLinkInDescriptions(t *testing.T) {
+	f := newFixture(t)
+	f.app.Cfg.Archiver.BaseURL = "https://archiver.example.com"
+	f.queueBookmarks(bm(1, "First Article"))
+	f.ip.texts[1] = longHTML
+
+	if code := f.app.Run(context.Background()); code != ExitSuccess {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+
+	want := "<![CDATA[\"First Article\" from example.com\n\n" +
+		`<a href="https://archiver.example.com/1?domain=example.com&amp;title=First+Article">Archive or Delete this article in Instapaper</a>]]>`
+	if xml := readFeed(t, f); !strings.Contains(xml, want) {
+		t.Errorf("feed missing archiver link %q", want)
+	}
+}
+
+func TestArchiverLinkEscaping(t *testing.T) {
+	art := &store.Article{
+		BookmarkID: 42,
+		Title:      `Ampersands & "Quotes"`,
+		URL:        "https://sub.example.com/a?x=1",
+	}
+	got := archiverLink("https://archiver.example.com/prefix", art)
+	want := `<a href="https://archiver.example.com/prefix/42?domain=sub.example.com&amp;title=Ampersands+%26+%22Quotes%22">Archive or Delete this article in Instapaper</a>`
+	if got != want {
+		t.Errorf("archiverLink =\n%s\nwant\n%s", got, want)
 	}
 }
 

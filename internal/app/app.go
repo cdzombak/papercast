@@ -4,9 +4,11 @@ package app
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -330,12 +332,35 @@ func (a *App) writeFeed() error {
 	return os.Rename(tmp.Name(), dest)
 }
 
-// episodeDescription returns the stored LLM description, or the fallback.
+// episodeDescription returns the stored LLM description, or the fallback,
+// with the archiver link appended when the integration is configured.
 func (a *App) episodeDescription(art *store.Article) string {
+	desc := FallbackDescription(art)
 	if art.Description != nil && *art.Description != "" {
-		return *art.Description
+		desc = *art.Description
 	}
-	return FallbackDescription(art)
+	if a.Cfg.Archiver.BaseURL != "" {
+		desc += "\n\n" + archiverLink(a.Cfg.Archiver.BaseURL, art)
+	}
+	return desc
+}
+
+// archiverLink returns an HTML anchor to the papercast-archiver page for art.
+// Descriptions are CDATA-wrapped in the feed, so the anchor reaches podcast
+// clients intact.
+func archiverLink(baseURL string, art *store.Article) string {
+	q := url.Values{}
+	if art.Title != "" {
+		q.Set("title", art.Title)
+	}
+	if d := art.Domain(); d != "" {
+		q.Set("domain", d)
+	}
+	u := baseURL + "/" + strconv.FormatInt(art.BookmarkID, 10)
+	if enc := q.Encode(); enc != "" {
+		u += "?" + enc
+	}
+	return `<a href="` + html.EscapeString(u) + `">Archive or Delete this article in Instapaper</a>`
 }
 
 // FallbackDescription is used when no LLM description is available.

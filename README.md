@@ -22,6 +22,7 @@ Copy [`config.example.yaml`](config.example.yaml) to `config.yaml` and edit it. 
 - `llm`: optional LLM-generated episode descriptions (disabled by default)
 - `tts`: Google service account key, voice list, and synthesis settings
 - `feed`: podcast metadata and the public base URL
+- `archiver`: optional per-episode "Archive or Delete this article in Instapaper" link to a [papercast-archiver](https://github.com/cdzombak/papercast-archiver) instance
 - `output`: directory where the feed and MP3s are written
 
 Every field is explained by comments in the example file.
