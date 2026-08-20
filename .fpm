@@ -1,0 +1,7 @@
+-s dir
+--name papercast
+--description "Turn unread Instapaper articles into a podcast feed using Google Chirp 3 HD text-to-speech"
+--url "https://github.com/cdzombak/papercast"
+--maintainer "Chris Dzombak <https://www.dzombak.com>"
+--license MIT
+--depends ffmpeg

@@ -10,6 +10,53 @@ It's designed to run from cron; nothing is interactive after the one-time Instap
 - A **Google Cloud project** with the Cloud Text-to-Speech API enabled. Create a service account with access scoped to the Text-to-Speech API only, download its JSON key, and point `tts.google_service_account_key_path` at it (or set `GOOGLE_APPLICATION_CREDENTIALS` yourself). Pick voices from the [Chirp 3 HD voice list](https://docs.cloud.google.com/text-to-speech/docs/chirp3-hd).
 - **ffmpeg** and **ffprobe** on `PATH`. (The Docker image includes them.)
 
+## Installation
+
+Every installation method except Docker requires ffmpeg; the Homebrew formula and Debian package pull it in for you.
+
+### macOS via Homebrew
+
+```shell
+brew install cdzombak/oss/papercast
+```
+
+### Debian via Apt repository
+
+Install my Debian repository if you haven't already:
+
+```shell
+sudo apt-get install ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://dist.cdzombak.net/deb.key | sudo gpg --dearmor -o /etc/apt/keyrings/dist-cdzombak-net.gpg
+sudo chmod 0644 /etc/apt/keyrings/dist-cdzombak-net.gpg
+echo -e "deb [signed-by=/etc/apt/keyrings/dist-cdzombak-net.gpg] https://dist.cdzombak.net/deb/oss any oss\n" | sudo tee -a /etc/apt/sources.list.d/dist-cdzombak-net.list > /dev/null
+sudo apt update
+```
+
+Then install `papercast` via `apt`:
+
+```shell
+sudo apt install papercast
+```
+
+### Manual installation from build artifacts
+
+Pre-built binaries for Linux and macOS (amd64 and arm64) are attached to every [GitHub Release](https://github.com/cdzombak/papercast/releases). Debian packages for each release are published as well.
+
+### Docker image
+
+Multi-architecture images are published to Docker Hub and GHCR; see [Docker](#docker) below.
+
+### Build and install locally
+
+```shell
+git clone https://github.com/cdzombak/papercast.git
+cd papercast
+make build
+
+cp out/papercast $INSTALL_DIR
+```
+
 ## Setup
 
 ### 1. Configure
@@ -109,6 +156,8 @@ Every command accepts `-config` (default `./config.yaml`) and `-log-level` (`deb
 
 ```shell
 make build          # build for the current platform to ./out
+make all            # cross-compile for macOS and Linux (amd64, arm64)
+make package        # build all binaries + .deb packages (requires fpm)
 make test           # run the test suite
 make lint           # lint (requires golangci-lint)
 make build-docker   # build a Docker image for the current machine

@@ -11,6 +11,7 @@ permissions:
 env:
   DOCKER_PLATFORMS: >-
     linux/amd64,linux/arm64
+  FPM_VERSION: 1.15.1
 
 jobs:
   meta:
@@ -46,6 +47,12 @@ jobs:
       bin_version: ${{ steps.bin_version.outputs.bin_version }}
       dockerhub_owner: ${{ github.repository_owner }}
       ghcr_owner: ${{ github.repository_owner }}
+      aptly_repo_name: oss
+      aptly_dist: any
+      aptly_publish_prefix: s3:dist.cdzombak.net:deb_oss
+      brewtap_owner: ${{ github.repository_owner }}
+      brewtap_name: oss
+      brewtap_formula_dir: Formula
       is_prerelease: >-
         ${{
           steps.running_version_tag.outputs.is_running_version_tag_update
@@ -161,7 +168,7 @@ jobs:
           short-description: ${{ github.event.repository.description }}
 
   binaries:
-    name: Binaries
+    name: Binaries & Debian Packages
     needs: [meta, lint, test]
     if: needs.meta.outputs.is_running_version_tag_update != 'true'
     runs-on: ubuntu-latest
@@ -177,17 +184,29 @@ jobs:
       - name: Go version
         run: go version
 
-      - name: Build binaries
-        run: make build-linux-amd64 build-linux-arm64
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+      - name: Ruby version
+        run: ruby --version
+      - name: Install fpm
+        run: |
+          gem install --no-document fpm -v "$FPM_VERSION"
+
+      - name: Build binaries & packages
+        run: make package
       - name: Prepare release artifacts
         working-directory: out/
         run: |
           mkdir ./gh-release
+          cp ./*.deb ./gh-release/
           find . -name '${{ needs.meta.outputs.bin_name }}-*' -executable \
             -type f -maxdepth 1 -print0 | xargs -0 -I {} tar \
             --transform='flags=r;s|.*|${{ needs.meta.outputs.bin_name }}|' \
             -czvf ./gh-release/{}.tar.gz {}
-      - name: Upload binaries
+      - name: Upload binaries & packages
         uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.meta.outputs.bin_name }} Binary Artifacts
@@ -203,7 +222,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download binaries
+      - name: Download binaries & packages
         uses: actions/download-artifact@v8
         with:
           name: ${{ needs.meta.outputs.bin_name }} Binary Artifacts
@@ -235,3 +254,125 @@ jobs:
           fail-on-non-semver-tag: true
           create-release: false
           update-full-release: false
+
+  aptly:
+    name: Aptly
+    needs: [meta, binaries]
+    if: needs.meta.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries & packages
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.meta.outputs.bin_name }} Binary Artifacts
+          path: out
+      - name: List artifacts
+        run: ls -R
+        working-directory: out
+
+      - name: Login to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+
+      - name: Push to Aptly Repo
+        shell: bash
+        run: |
+          set -x
+          for DEB in out/*.deb; do
+            curl -u "${{ secrets.APTLY_CRED }}" \
+              -fsS -X POST \
+              -F file=@"${DEB}" \
+              "${{ secrets.APTLY_API }}/files/${{
+                needs.meta.outputs.bin_name }}-${{
+                needs.meta.outputs.bin_version }}"
+          done
+          curl -u "${{ secrets.APTLY_CRED }}" \
+            -fsS -X POST \
+            "${{ secrets.APTLY_API }}/repos/${{
+              needs.meta.outputs.aptly_repo_name }}/file/${{
+              needs.meta.outputs.bin_name }}-${{
+              needs.meta.outputs.bin_version }}?forceReplace=1"
+
+      - name: Update Published Aptly Repo
+        run: |
+          set -x
+          curl -u "${{ secrets.APTLY_CRED }}" \
+            -fsS -X PUT \
+            -H 'Content-Type: application/json' \
+            --data '{"ForceOverwrite": true}' \
+            "${{ secrets.APTLY_API }}/publish/${{
+              needs.meta.outputs.aptly_publish_prefix }}/${{
+              needs.meta.outputs.aptly_dist }}?_async=true"
+
+  homebrew:
+    name: Update Homebrew Tap
+    needs: [meta, binaries, release]
+    if: needs.meta.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: >-
+          Release to ${{ needs.meta.outputs.brewtap_owner }}/${{
+            needs.meta.outputs.brewtap_name }} tap
+        uses: Justintime50/homebrew-releaser@v3
+        with:
+          homebrew_owner: ${{ needs.meta.outputs.brewtap_owner }}
+          homebrew_tap: homebrew-${{ needs.meta.outputs.brewtap_name }}
+          formula_folder: ${{ needs.meta.outputs.brewtap_formula_dir }}
+          update_readme_table: true
+          github_token: ${{ secrets.HOMEBREW_RELEASER_PAT }}
+          commit_owner: homebrew-releaser-bot
+          commit_email: homebrew-releaser-bot@users.noreply.github.com
+          target_darwin_amd64: true
+          target_darwin_arm64: true
+          target_linux_amd64: true
+          target_linux_arm64: true
+          version: v${{ needs.meta.outputs.bin_version }}
+          depends_on: |
+            "ffmpeg"
+          install: 'bin.install "${{ needs.meta.outputs.bin_name }}"'
+          test: >-
+            assert_match("${{ needs.meta.outputs.bin_version }}",
+            shell_output("#{bin}/${{ needs.meta.outputs.bin_name }} -version"))
+
+  ntfy:
+    name: Ntfy
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    # lint and test are needed here as well as by the build jobs: a failure in
+    # either only *skips* those, and a skip is not a failure, so without them
+    # this job would announce a success for a release that never got built.
+    needs: [meta, lint, test, docker, binaries, release, aptly, homebrew]
+    steps:
+      - name: Send success notification
+        uses: niniyas/ntfy-action@V1.0.5
+        if: ${{ !contains(needs.*.result, 'failure') }}
+        with:
+          url: "https://ntfy.cdzombak.net"
+          topic: "gha-builds"
+          priority: 3
+          headers: '{"authorization": "Bearer ${{ secrets.NTFY_TOKEN }}"}'
+          tags: white_check_mark
+          title: >-
+            ${{ github.event.repository.name }} ${{
+              needs.meta.outputs.bin_version }} available
+          details: >-
+            ${{ github.event.repository.name }} version ${{
+              needs.meta.outputs.bin_version }} is now available.
+      - name: Send failure notification
+        uses: niniyas/ntfy-action@V1.0.5
+        if: ${{ contains(needs.*.result, 'failure') }}
+        with:
+          url: "https://ntfy.cdzombak.net"
+          topic: "gha-builds"
+          priority: 3
+          headers: '{"authorization": "Bearer ${{ secrets.NTFY_TOKEN }}"}'
+          tags: no_entry
+          title: >-
+            ${{ github.event.repository.name }} ${{
+              needs.meta.outputs.bin_version }} build failed
+          details: >-
+            Build failed for ${{ github.event.repository.name }} version ${{
+              needs.meta.outputs.bin_version }}.
