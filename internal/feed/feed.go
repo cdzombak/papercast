@@ -3,6 +3,7 @@ package feed
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 // Meta holds channel-level feed metadata.
 type Meta struct {
 	Title       string
-	Description string
+	Description string // HTML fragment; will be CDATA-wrapped
 	Language    string
 	Author      string // itunes:author; may be ""
 	CoverArtURL string // may be ""
@@ -28,7 +29,7 @@ type Episode struct {
 	BookmarkID  int64
 	Title       string
 	Link        string // the article's URL
-	Description string // plain text; will be CDATA-wrapped
+	Description string // HTML fragment; will be CDATA-wrapped
 	MP3Filename string // filename within the output dir
 	SizeBytes   int64
 	Duration    time.Duration
@@ -43,7 +44,9 @@ func Render(meta Meta, episodes []Episode, now time.Time) ([]byte, error) {
 		return nil, fmt.Errorf("feed: parse base URL %q: %w", meta.BaseURL, err)
 	}
 
-	p := podcast.New(meta.Title, meta.BaseURL, meta.Description, &now, &now)
+	// The podcast library cannot emit CDATA descriptions; every description
+	// is encoded as a marker and swapped for CDATA-wrapped HTML afterwards.
+	p := podcast.New(meta.Title, meta.BaseURL, channelDescMarker, &now, &now)
 	p.Language = meta.Language
 	p.IAuthor = meta.Author
 	p.Generator = meta.Generator
@@ -57,10 +60,9 @@ func Render(meta Meta, episodes []Episode, now time.Time) ([]byte, error) {
 			GUID:  strconv.FormatInt(ep.BookmarkID, 10),
 			Title: ep.Title,
 			Link:  ep.Link,
-			// The podcast library cannot emit CDATA descriptions, and
-			// requires Description to be non-empty; use a marker that is
-			// swapped for the CDATA-wrapped text after encoding.
-			Description: descMarker(ep.BookmarkID),
+			// The library also requires Description to be non-empty, which
+			// the marker satisfies.
+			Description: itemDescMarker(ep.BookmarkID),
 		}
 		pubDate := ep.PubDate
 		item.AddPubDate(&pubDate)
@@ -76,15 +78,16 @@ func Render(meta Meta, episodes []Episode, now time.Time) ([]byte, error) {
 		return nil, fmt.Errorf("feed: encode: %w", err)
 	}
 
-	out := buf.String()
+	out, err := replaceDesc(buf.String(), channelDescMarker, meta.Description)
+	if err != nil {
+		return nil, fmt.Errorf("feed: channel description: %w", err)
+	}
 	for i := range episodes {
 		ep := &episodes[i]
-		needle := "<description>" + descMarker(ep.BookmarkID) + "</description>"
-		if !strings.Contains(out, needle) {
-			return nil, fmt.Errorf("feed: description marker for bookmark %d not found in encoded XML", ep.BookmarkID)
+		out, err = replaceDesc(out, itemDescMarker(ep.BookmarkID), ep.Description)
+		if err != nil {
+			return nil, fmt.Errorf("feed: description for bookmark %d: %w", ep.BookmarkID, err)
 		}
-		replacement := "<description><![CDATA[" + cdataEscape(ep.Description) + "]]></description>"
-		out = strings.Replace(out, needle, replacement, 1)
 	}
 
 	// The podcast library does not emit isPermaLink on item GUIDs, and it
@@ -94,10 +97,24 @@ func Render(meta Meta, episodes []Episode, now time.Time) ([]byte, error) {
 	return []byte(out), nil
 }
 
-// descMarker returns a collision-proof placeholder for an episode's
+// channelDescMarker is the placeholder for the channel description.
+const channelDescMarker = "PAPERCAST-CHANNEL-DESC-MARKER"
+
+// itemDescMarker returns a collision-proof placeholder for an episode's
 // description.
-func descMarker(bookmarkID int64) string {
+func itemDescMarker(bookmarkID int64) string {
 	return fmt.Sprintf("PAPERCAST-DESC-%d-MARKER", bookmarkID)
+}
+
+// replaceDesc swaps the <description> element holding marker for one holding
+// desc, CDATA-wrapped.
+func replaceDesc(xml, marker, desc string) (string, error) {
+	needle := "<description>" + marker + "</description>"
+	if !strings.Contains(xml, needle) {
+		return "", errors.New("marker not found in encoded XML")
+	}
+	replacement := "<description><![CDATA[" + cdataEscape(desc) + "]]></description>"
+	return strings.Replace(xml, needle, replacement, 1), nil
 }
 
 // cdataEscape makes s safe for embedding in a CDATA section by splitting

@@ -77,6 +77,7 @@ type parsedItem struct {
 
 type parsedChannel struct {
 	Title         string       `xml:"title"`
+	Description   string       `xml:"description"`
 	Link          string       `xml:"link"`
 	Language      string       `xml:"language"`
 	Author        string       `xml:"author"`
@@ -222,6 +223,34 @@ func TestRenderEpisodes(t *testing.T) {
 	}
 	if second.PubDate != testPub2.Format(time.RFC1123Z) {
 		t.Errorf("second item pubDate = %q", second.PubDate)
+	}
+}
+
+func TestRenderChannelDescriptionCDATA(t *testing.T) {
+	meta := testMeta()
+	meta.Description = "Unread articles &amp; essays,<br>read aloud."
+	raw, parsed := renderAndParse(t, meta, testEpisodes())
+
+	want := "<description><![CDATA[Unread articles &amp; essays,<br>read aloud.]]></description>"
+	if !strings.Contains(raw, want) {
+		t.Errorf("missing CDATA channel description %q", want)
+	}
+	// CDATA passes the markup through untouched.
+	if parsed.Channel.Description != meta.Description {
+		t.Errorf("channel description = %q, want %q", parsed.Channel.Description, meta.Description)
+	}
+}
+
+func TestRenderEmptyChannelDescription(t *testing.T) {
+	meta := testMeta()
+	meta.Description = ""
+	raw, parsed := renderAndParse(t, meta, testEpisodes())
+
+	if !strings.Contains(raw, "<description><![CDATA[]]></description>") {
+		t.Error("missing empty CDATA channel description")
+	}
+	if parsed.Channel.Description != "" {
+		t.Errorf("channel description = %q, want empty", parsed.Channel.Description)
 	}
 }
 

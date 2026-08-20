@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cdzombak/papercast/internal/audio"
@@ -302,7 +303,7 @@ func (a *App) writeFeed() error {
 
 	xml, err := feed.Render(feed.Meta{
 		Title:       a.Cfg.Feed.Title,
-		Description: a.Cfg.Feed.Description,
+		Description: textToHTML(a.Cfg.Feed.Description),
 		Language:    a.Cfg.Feed.Language,
 		Author:      a.Cfg.Feed.Author,
 		CoverArtURL: a.Cfg.Feed.CoverArtURL,
@@ -332,17 +333,28 @@ func (a *App) writeFeed() error {
 	return os.Rename(tmp.Name(), dest)
 }
 
-// episodeDescription returns the stored LLM description, or the fallback,
-// with the archiver link appended when the integration is configured.
+// episodeDescription returns the episode description as an HTML fragment:
+// the stored LLM description, or the fallback, with the archiver link
+// appended when the integration is configured.
 func (a *App) episodeDescription(art *store.Article) string {
-	desc := FallbackDescription(art)
+	text := FallbackDescription(art)
 	if art.Description != nil && *art.Description != "" {
-		desc = *art.Description
+		text = *art.Description
 	}
+	desc := textToHTML(text)
 	if a.Cfg.Archiver.BaseURL != "" {
-		desc += "\n\n" + archiverLink(a.Cfg.Archiver.BaseURL, art)
+		desc += "<br><br>" + archiverLink(a.Cfg.Archiver.BaseURL, art)
 	}
 	return desc
+}
+
+// textToHTML renders plain text as an HTML fragment: markup characters are
+// escaped and line breaks become <br>.
+func textToHTML(s string) string {
+	s = strings.ReplaceAll(strings.TrimSpace(s), "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	// Escape first, so the breaks we insert survive.
+	return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>")
 }
 
 // archiverLink returns an HTML anchor to the papercast-archiver page for art.
@@ -363,9 +375,11 @@ func archiverLink(baseURL string, art *store.Article) string {
 	return `<a href="` + html.EscapeString(u) + `">Archive or Delete this article in Instapaper</a>`
 }
 
-// FallbackDescription is used when no LLM description is available.
+// FallbackDescription is the plain-text description used when no LLM
+// description is available.
 func FallbackDescription(art *store.Article) string {
 	// Not %q: that escapes quotes and backslashes in the title Go-style,
-	// which would show up verbatim in podcast clients.
-	return fmt.Sprintf(`"%s" from %s`, art.Title, art.Domain())
+	// which would show up verbatim in podcast clients. Curly quotes read
+	// better than straight ones and survive HTML escaping unchanged.
+	return fmt.Sprintf("“%s” from %s", art.Title, art.Domain())
 }

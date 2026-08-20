@@ -60,7 +60,7 @@ tts:
 
 feed:
   title: "My Instapaper Podcast"
-  # description: defaults to the feed title
+  # description: plain text (any markup is escaped); defaults to the feed title
   language: "en-us"
   author: "Your Name"
   # Cover art URL; host this image yourself.

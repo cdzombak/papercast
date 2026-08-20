@@ -230,7 +230,7 @@ func TestRunHappyPath(t *testing.T) {
 		"<guid isPermaLink=\"false\">1</guid>",
 		"<guid isPermaLink=\"false\">2</guid>",
 		"https://example.com/pods/1.mp3",
-		"<![CDATA[\"First Article\" from example.com]]>",
+		"<![CDATA[“First Article” from example.com]]>",
 		"<title>Test Feed</title>",
 	} {
 		if !strings.Contains(xml, want) {
@@ -549,7 +549,7 @@ func TestDescriptionsStoredAndRetried(t *testing.T) {
 	if code := f.app.Run(context.Background()); code != ExitSuccess {
 		t.Fatalf("first run exit = %d, want 0", code)
 	}
-	if !strings.Contains(readFeed(t, f), "<![CDATA[\"Described\" from example.com]]>") {
+	if !strings.Contains(readFeed(t, f), "<![CDATA[“Described” from example.com]]>") {
 		t.Error("feed missing fallback description")
 	}
 	art, _ := f.store.Get(1)
@@ -691,10 +691,80 @@ func TestArchiverLinkInDescriptions(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
 
-	want := "<![CDATA[\"First Article\" from example.com\n\n" +
+	want := `<![CDATA[“First Article” from example.com<br><br>` +
 		`<a href="https://archiver.example.com/1?domain=example.com&amp;title=First+Article">Archive or Delete this article in Instapaper</a>]]>`
 	if xml := readFeed(t, f); !strings.Contains(xml, want) {
 		t.Errorf("feed missing archiver link %q", want)
+	}
+}
+
+func TestDescriptionHTMLEscaping(t *testing.T) {
+	f := newFixture(t)
+	f.app.Cfg.Archiver.BaseURL = "https://archiver.example.com"
+	f.app.Describer = &fakeDescriber{result: "Fish & <chips>.\n\nA second paragraph."}
+	f.queueBookmarks(bm(1, "Tom & Jerry <Reviewed>"))
+	f.ip.texts[1] = longHTML
+
+	if code := f.app.Run(context.Background()); code != ExitSuccess {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	xml := readFeed(t, f)
+
+	// The LLM description is escaped and its blank line becomes <br><br>.
+	want := "<![CDATA[Fish &amp; &lt;chips&gt;.<br><br>A second paragraph.<br><br>" +
+		`<a href="https://archiver.example.com/1?domain=example.com&amp;title=Tom+%26+Jerry+%3CReviewed%3E">`
+	if !strings.Contains(xml, want) {
+		t.Errorf("feed missing escaped description %q, got:\n%s", want, xml)
+	}
+	// The title reaches <title> XML-escaped, not HTML-escaped twice.
+	if !strings.Contains(xml, "<title>Tom &amp; Jerry &lt;Reviewed&gt;</title>") {
+		t.Error("item title not XML-escaped as expected")
+	}
+}
+
+func TestFallbackDescriptionEscapedInFeed(t *testing.T) {
+	f := newFixture(t)
+	f.queueBookmarks(bm(1, "Tom & Jerry <Reviewed>"))
+	f.ip.texts[1] = longHTML
+
+	if code := f.app.Run(context.Background()); code != ExitSuccess {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+
+	want := `<![CDATA[“Tom &amp; Jerry &lt;Reviewed&gt;” from example.com]]>`
+	if xml := readFeed(t, f); !strings.Contains(xml, want) {
+		t.Errorf("feed missing escaped fallback description %q", want)
+	}
+}
+
+func TestChannelDescriptionEscaped(t *testing.T) {
+	f := newFixture(t)
+	f.app.Cfg.Feed.Description = "Articles & essays,\nread aloud."
+	f.queueBookmarks(bm(1, "First Article"))
+	f.ip.texts[1] = longHTML
+
+	if code := f.app.Run(context.Background()); code != ExitSuccess {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+
+	want := "<description><![CDATA[Articles &amp; essays,<br>read aloud.]]></description>"
+	if xml := readFeed(t, f); !strings.Contains(xml, want) {
+		t.Errorf("feed missing escaped channel description %q", want)
+	}
+}
+
+func TestTextToHTML(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"plain text", "plain text"},
+		{`"quoted" & <tagged>`, `&#34;quoted&#34; &amp; &lt;tagged&gt;`},
+		{"one\ntwo\r\nthree\rfour", "one<br>two<br>three<br>four"},
+		{"  padded\n", "padded"},
+		{"already &amp; escaped", "already &amp;amp; escaped"},
+	}
+	for _, tc := range cases {
+		if got := textToHTML(tc.in); got != tc.want {
+			t.Errorf("textToHTML(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -716,7 +786,9 @@ func TestFallbackDescriptionQuoting(t *testing.T) {
 		Title: `The "Best" C:\Path Article`,
 		URL:   "https://www.example.com/a",
 	}
-	want := `"The "Best" C:\Path Article" from example.com`
+	// The title's own straight quotes and backslashes pass through as-is;
+	// only the wrapping quotes are curly.
+	want := `“The "Best" C:\Path Article” from example.com`
 	if got := FallbackDescription(art); got != want {
 		t.Errorf("FallbackDescription = %s, want %s", got, want)
 	}
