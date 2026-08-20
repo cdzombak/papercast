@@ -183,6 +183,7 @@ func (a *App) synthesizeChunks(ctx context.Context, chunks []textproc.Chunk, voi
 			SSML:         chunk.SSML,
 			Voice:        voice,
 			LanguageCode: a.Cfg.TTS.Language,
+			Speed:        a.Cfg.TTS.Speed,
 		}
 		path := filepath.Join(workDir, tts.CacheKey(req)+".mp3")
 		if _, err := os.Stat(path); err == nil {

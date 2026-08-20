@@ -53,6 +53,8 @@ tts:
   intro: true
   # Send SSML instead of plain text (see the Chirp 3 HD SSML docs).
   ssml: false
+  # Speaking rate: 0.25 (very slow) to 2.0 (very fast); 1.0 is normal.
+  speed: 1.0
   # Per-request payload budget in bytes (API limit is 5000; leave headroom).
   max_chunk_bytes: 4500
 

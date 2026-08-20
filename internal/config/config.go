@@ -70,6 +70,7 @@ type TTSConfig struct {
 	Voices                      []string `yaml:"voices"`
 	Language                    string   `yaml:"language"`
 	SSML                        bool     `yaml:"ssml"`
+	Speed                       float64  `yaml:"speed"`
 	MaxChunkBytes               int      `yaml:"max_chunk_bytes"`
 	Intro                       *bool    `yaml:"intro"`
 	GoogleServiceAccountKeyPath string   `yaml:"google_service_account_key_path"`
@@ -102,6 +103,7 @@ const (
 	DefaultLLMTimeout    = 60 * time.Second
 	DefaultMaxInputChars = 60000
 	DefaultMaxChunkBytes = 4500
+	DefaultSpeed         = 1.0
 	DefaultLanguage      = "en-US"
 	DefaultFeedLanguage  = "en-us"
 	DefaultFeedFilename  = "feed.xml"
@@ -147,6 +149,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.TTS.MaxChunkBytes == 0 {
 		c.TTS.MaxChunkBytes = DefaultMaxChunkBytes
+	}
+	if c.TTS.Speed == 0 {
+		c.TTS.Speed = DefaultSpeed
 	}
 	if c.Feed.Language == "" {
 		c.Feed.Language = DefaultFeedLanguage
@@ -202,6 +207,9 @@ func (c *Config) validate() error {
 	}
 	if c.TTS.MaxChunkBytes < 100 || c.TTS.MaxChunkBytes > 5000 {
 		errs = append(errs, "tts.max_chunk_bytes must be between 100 and 5000")
+	}
+	if c.TTS.Speed < 0.25 || c.TTS.Speed > 2.0 {
+		errs = append(errs, "tts.speed must be between 0.25 and 2.0")
 	}
 	if c.TTS.GoogleServiceAccountKeyPath == "" && os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
 		errs = append(errs, "tts.google_service_account_key_path is required (or set GOOGLE_APPLICATION_CREDENTIALS)")

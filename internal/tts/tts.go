@@ -14,8 +14,9 @@ import (
 type Request struct {
 	Payload      string // plain text or a complete <speak> SSML document
 	SSML         bool
-	Voice        string // e.g. "en-US-Chirp3-HD-Aoede"
-	LanguageCode string // e.g. "en-US"
+	Voice        string  // e.g. "en-US-Chirp3-HD-Aoede"
+	LanguageCode string  // e.g. "en-US"
+	Speed        float64 // speaking rate, 0.25–2.0; 1.0 (or 0) is normal
 }
 
 // Synthesizer converts a Request into MP3 audio.
@@ -54,6 +55,7 @@ func (g *googleSynthesizer) Synthesize(ctx context.Context, req Request) ([]byte
 		},
 		AudioConfig: &texttospeechpb.AudioConfig{
 			AudioEncoding: texttospeechpb.AudioEncoding_MP3,
+			SpeakingRate:  req.Speed,
 		},
 	})
 	if err != nil {

@@ -62,6 +62,9 @@ func TestLoadValidAppliesDefaults(t *testing.T) {
 	if cfg.TTS.MaxChunkBytes != 4500 {
 		t.Errorf("MaxChunkBytes = %d, want 4500", cfg.TTS.MaxChunkBytes)
 	}
+	if cfg.TTS.Speed != 1.0 {
+		t.Errorf("Speed = %v, want 1.0", cfg.TTS.Speed)
+	}
 	if !cfg.TTS.IntroEnabled() {
 		t.Error("intro should default to enabled")
 	}
@@ -113,6 +116,17 @@ func TestIntroDisable(t *testing.T) {
 	}
 }
 
+func TestSpeedOverride(t *testing.T) {
+	yaml := strings.Replace(validYAML, "tts:\n", "tts:\n  speed: 1.5\n", 1)
+	cfg, err := Load(writeConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TTS.Speed != 1.5 {
+		t.Errorf("Speed = %v, want 1.5", cfg.TTS.Speed)
+	}
+}
+
 func TestValidationErrors(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -129,6 +143,12 @@ func TestValidationErrors(t *testing.T) {
 		{"voice language mismatch", func(s string) string {
 			return strings.Replace(s, "en-US-Chirp3-HD-Puck", "de-DE-Chirp3-HD-Puck", 1)
 		}, "does not match language"},
+		{"speed too slow", func(s string) string {
+			return strings.Replace(s, "tts:\n", "tts:\n  speed: 0.1\n", 1)
+		}, "tts.speed must be between 0.25 and 2.0"},
+		{"speed too fast", func(s string) string {
+			return strings.Replace(s, "tts:\n", "tts:\n  speed: 2.5\n", 1)
+		}, "tts.speed must be between 0.25 and 2.0"},
 		{"llm enabled without model", func(s string) string {
 			return s + "\nllm:\n  enabled: true\n  endpoint: https://api.openai.com/v1\n"
 		}, "llm.model"},

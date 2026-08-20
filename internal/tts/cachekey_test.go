@@ -36,10 +36,25 @@ func TestCacheKey_FieldChangesChangeKey(t *testing.T) {
 		"ssml":     {Payload: base.Payload, SSML: true, Voice: base.Voice, LanguageCode: base.LanguageCode},
 		"voice":    {Payload: base.Payload, SSML: base.SSML, Voice: "en-US-Chirp3-HD-Puck", LanguageCode: base.LanguageCode},
 		"language": {Payload: base.Payload, SSML: base.SSML, Voice: base.Voice, LanguageCode: "en-GB"},
+		"speed":    {Payload: base.Payload, SSML: base.SSML, Voice: base.Voice, LanguageCode: base.LanguageCode, Speed: 1.5},
 	}
 	for name, req := range variants {
 		if CacheKey(req) == baseKey {
 			t.Errorf("changing %s did not change the key", name)
 		}
+	}
+}
+
+func TestCacheKey_DefaultSpeedMatchesUnset(t *testing.T) {
+	base := Request{
+		Payload:      "Hello, world.",
+		SSML:         false,
+		Voice:        "en-US-Chirp3-HD-Aoede",
+		LanguageCode: "en-US",
+	}
+	normal := base
+	normal.Speed = 1.0
+	if CacheKey(normal) != CacheKey(base) {
+		t.Error("speed 1.0 should produce the same key as unset speed")
 	}
 }

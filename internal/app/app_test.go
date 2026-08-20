@@ -146,6 +146,7 @@ func newFixture(t *testing.T) *fixture {
 		TTS: config.TTSConfig{
 			Voices:        []string{"en-US-Chirp3-HD-Aoede"},
 			Language:      "en-US",
+			Speed:         1.0,
 			MaxChunkBytes: 4500,
 			Intro:         &intro,
 		},
@@ -241,6 +242,11 @@ func TestRunHappyPath(t *testing.T) {
 	if len(f.synth.calls) == 0 || !strings.HasPrefix(f.synth.calls[0].Payload, "First Article. From example.com.") &&
 		!strings.HasPrefix(f.synth.calls[0].Payload, "Second Article. From example.com.") {
 		t.Errorf("first chunk missing intro: %q", f.synth.calls[0].Payload)
+	}
+
+	// The configured speaking rate reaches the synthesizer.
+	if f.synth.calls[0].Speed != 1.0 {
+		t.Errorf("speed = %v, want 1.0 from config", f.synth.calls[0].Speed)
 	}
 }
 
