@@ -230,7 +230,7 @@ func TestRunHappyPath(t *testing.T) {
 		"<guid isPermaLink=\"false\">1</guid>",
 		"<guid isPermaLink=\"false\">2</guid>",
 		"https://example.com/pods/1.mp3",
-		"<![CDATA[“First Article” from example.com]]>",
+		`<![CDATA[<a href="https://www.example.com/articles/1">“First Article” from example.com</a>]]>`,
 		"<title>Test Feed</title>",
 	} {
 		if !strings.Contains(xml, want) {
@@ -549,8 +549,8 @@ func TestDescriptionsStoredAndRetried(t *testing.T) {
 	if code := f.app.Run(context.Background()); code != ExitSuccess {
 		t.Fatalf("first run exit = %d, want 0", code)
 	}
-	if !strings.Contains(readFeed(t, f), "<![CDATA[“Described” from example.com]]>") {
-		t.Error("feed missing fallback description")
+	if !strings.Contains(readFeed(t, f), `<![CDATA[<a href="https://www.example.com/articles/1">“Described” from example.com</a>]]>`) {
+		t.Error("feed missing article link")
 	}
 	art, _ := f.store.Get(1)
 	if art.Description != nil {
@@ -569,7 +569,7 @@ func TestDescriptionsStoredAndRetried(t *testing.T) {
 	if art.Description == nil || *art.Description != "A thoughtful summary." {
 		t.Errorf("description not stored on retry: %v", art.Description)
 	}
-	if !strings.Contains(readFeed(t, f), "<![CDATA[A thoughtful summary.]]>") {
+	if !strings.Contains(readFeed(t, f), "</a><br><br>A thoughtful summary.]]>") {
 		t.Error("feed missing retried description")
 	}
 }
@@ -632,7 +632,7 @@ func TestDescriptionsRetriedForPublishedArticleThatUsedAllAttempts(t *testing.T)
 	if code := f.app.Run(context.Background()); code != ExitSuccess {
 		t.Fatalf("third run exit = %d, want 0", code)
 	}
-	if !strings.Contains(readFeed(t, f), "<![CDATA[A thoughtful summary.]]>") {
+	if !strings.Contains(readFeed(t, f), "</a><br><br>A thoughtful summary.]]>") {
 		t.Error("feed missing description retried for a published episode")
 	}
 }
@@ -691,7 +691,7 @@ func TestArchiverLinkInDescriptions(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
 
-	want := `<![CDATA[“First Article” from example.com<br><br>` +
+	want := `<![CDATA[<a href="https://www.example.com/articles/1">“First Article” from example.com</a><br><br>` +
 		`<a href="https://archiver.example.com/1?domain=example.com&amp;title=First+Article">Archive or Delete this article in Instapaper</a>]]>`
 	if xml := readFeed(t, f); !strings.Contains(xml, want) {
 		t.Errorf("feed missing archiver link %q", want)
@@ -711,7 +711,8 @@ func TestDescriptionHTMLEscaping(t *testing.T) {
 	xml := readFeed(t, f)
 
 	// The LLM description is escaped and its blank line becomes <br><br>.
-	want := "<![CDATA[Fish &amp; &lt;chips&gt;.<br><br>A second paragraph.<br><br>" +
+	want := `<![CDATA[<a href="https://www.example.com/articles/1">“Tom &amp; Jerry &lt;Reviewed&gt;” from example.com</a><br><br>` +
+		"Fish &amp; &lt;chips&gt;.<br><br>A second paragraph.<br><br>" +
 		`<a href="https://archiver.example.com/1?domain=example.com&amp;title=Tom+%26+Jerry+%3CReviewed%3E">`
 	if !strings.Contains(xml, want) {
 		t.Errorf("feed missing escaped description %q, got:\n%s", want, xml)
@@ -722,7 +723,7 @@ func TestDescriptionHTMLEscaping(t *testing.T) {
 	}
 }
 
-func TestFallbackDescriptionEscapedInFeed(t *testing.T) {
+func TestArticleLinkEscapedInFeed(t *testing.T) {
 	f := newFixture(t)
 	f.queueBookmarks(bm(1, "Tom & Jerry <Reviewed>"))
 	f.ip.texts[1] = longHTML
@@ -731,9 +732,9 @@ func TestFallbackDescriptionEscapedInFeed(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
 
-	want := `<![CDATA[“Tom &amp; Jerry &lt;Reviewed&gt;” from example.com]]>`
+	want := `<![CDATA[<a href="https://www.example.com/articles/1">“Tom &amp; Jerry &lt;Reviewed&gt;” from example.com</a>]]>`
 	if xml := readFeed(t, f); !strings.Contains(xml, want) {
-		t.Errorf("feed missing escaped fallback description %q", want)
+		t.Errorf("feed missing escaped article link %q", want)
 	}
 }
 
@@ -781,7 +782,21 @@ func TestArchiverLinkEscaping(t *testing.T) {
 	}
 }
 
-func TestFallbackDescriptionQuoting(t *testing.T) {
+func TestArticleLinkEscaping(t *testing.T) {
+	art := &store.Article{
+		BookmarkID: 42,
+		Title:      `Ampersands & "Quotes"`,
+		URL:        `https://sub.example.com/a?x=1&y="2"`,
+	}
+	got := articleLink(art)
+	want := `<a href="https://sub.example.com/a?x=1&amp;y=&#34;2&#34;">` +
+		`“Ampersands &amp; &#34;Quotes&#34;” from sub.example.com</a>`
+	if got != want {
+		t.Errorf("articleLink =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestArticleLabelQuoting(t *testing.T) {
 	art := &store.Article{
 		Title: `The "Best" C:\Path Article`,
 		URL:   "https://www.example.com/a",
@@ -789,8 +804,8 @@ func TestFallbackDescriptionQuoting(t *testing.T) {
 	// The title's own straight quotes and backslashes pass through as-is;
 	// only the wrapping quotes are curly.
 	want := `“The "Best" C:\Path Article” from example.com`
-	if got := FallbackDescription(art); got != want {
-		t.Errorf("FallbackDescription = %s, want %s", got, want)
+	if got := articleLabel(art); got != want {
+		t.Errorf("articleLabel = %s, want %s", got, want)
 	}
 }
 

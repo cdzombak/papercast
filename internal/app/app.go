@@ -333,19 +333,24 @@ func (a *App) writeFeed() error {
 	return os.Rename(tmp.Name(), dest)
 }
 
-// episodeDescription returns the episode description as an HTML fragment:
-// the stored LLM description, or the fallback, with the archiver link
-// appended when the integration is configured.
+// episodeDescription returns the episode description as an HTML fragment: a
+// link to the article, then the stored LLM description if there is one, then
+// the archiver link when that integration is configured.
 func (a *App) episodeDescription(art *store.Article) string {
-	text := FallbackDescription(art)
+	desc := articleLink(art)
 	if art.Description != nil && *art.Description != "" {
-		text = *art.Description
+		desc += "<br><br>" + textToHTML(*art.Description)
 	}
-	desc := textToHTML(text)
 	if a.Cfg.Archiver.BaseURL != "" {
 		desc += "<br><br>" + archiverLink(a.Cfg.Archiver.BaseURL, art)
 	}
 	return desc
+}
+
+// articleLink returns an HTML anchor to the article, labeled with its title
+// and source domain.
+func articleLink(art *store.Article) string {
+	return `<a href="` + html.EscapeString(art.URL) + `">` + textToHTML(articleLabel(art)) + `</a>`
 }
 
 // textToHTML renders plain text as an HTML fragment: markup characters are
@@ -375,9 +380,9 @@ func archiverLink(baseURL string, art *store.Article) string {
 	return `<a href="` + html.EscapeString(u) + `">Archive or Delete this article in Instapaper</a>`
 }
 
-// FallbackDescription is the plain-text description used when no LLM
-// description is available.
-func FallbackDescription(art *store.Article) string {
+// articleLabel is the plain-text label for an article: its title and source
+// domain.
+func articleLabel(art *store.Article) string {
 	// Not %q: that escapes quotes and backslashes in the title Go-style,
 	// which would show up verbatim in podcast clients. Curly quotes read
 	// better than straight ones and survive HTML escaping unchanged.

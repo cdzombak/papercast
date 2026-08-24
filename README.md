@@ -150,7 +150,7 @@ Every command accepts `-config` (default `./config.yaml`) and `-log-level` (`deb
 - Articles shorter than `processing.min_words` words are skipped permanently and never retried.
 - Deleting or archiving an article in Instapaper removes its episode from the feed and its MP3 from disk on the next run. papercast never writes to Instapaper.
 - A voice is picked at random from `tts.voices` for each article and kept for that article, so retries sound consistent.
-- When LLM descriptions are disabled or a request fails, the episode description falls back to `"Article Title" from example.com`. Failed descriptions are retried on later runs when the LLM is enabled, and the feed is updated once one succeeds.
+- Every episode description begins with a link to the article. When LLM descriptions are disabled or a request fails, that link is the whole description. Failed descriptions are retried on later runs when the LLM is enabled, and the feed is updated once one succeeds.
 
 ## Building from source
 
