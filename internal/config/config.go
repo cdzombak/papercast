@@ -63,6 +63,7 @@ type LLMConfig struct {
 	Endpoint      string   `yaml:"endpoint"`
 	APIKey        string   `yaml:"api_key"`
 	Model         string   `yaml:"model"`
+	Prompt        string   `yaml:"prompt"`
 	Timeout       Duration `yaml:"timeout"`
 	MaxInputChars int      `yaml:"max_input_chars"`
 }
@@ -108,6 +109,7 @@ const (
 	DefaultRetryInterval = 60 * time.Minute
 	DefaultMaxAttempts   = 3
 	DefaultLLMTimeout    = 60 * time.Second
+	DefaultLLMPrompt     = "Summarize the following article in no more than 3 sentences."
 	DefaultMaxInputChars = 60000
 	DefaultMaxChunkBytes = 4500
 	DefaultSpeed         = 1.0
@@ -144,6 +146,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Processing.MaxAttempts == 0 {
 		c.Processing.MaxAttempts = DefaultMaxAttempts
+	}
+	if strings.TrimSpace(c.LLM.Prompt) == "" {
+		c.LLM.Prompt = DefaultLLMPrompt
 	}
 	if c.LLM.Timeout == 0 {
 		c.LLM.Timeout = Duration(DefaultLLMTimeout)

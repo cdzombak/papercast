@@ -14,7 +14,8 @@ import (
 	"unicode/utf8"
 )
 
-const promptFormat = "Summarize the following article in 1 paragraph. Do not include any introductory text, just the summary:\n\n<article>\n%s\n</article>"
+// articleFormat wraps the article text appended after the configured prompt.
+const articleFormat = "%s\n\n<article>\n%s\n</article>"
 
 const maxErrBodyBytes = 500
 
@@ -23,6 +24,7 @@ type Describer struct {
 	endpoint      string
 	apiKey        string
 	model         string
+	prompt        string
 	timeout       time.Duration
 	maxInputChars int
 	client        *http.Client
@@ -31,12 +33,14 @@ type Describer struct {
 // NewDescriber creates a Describer. endpoint is the base URL of an
 // OpenAI-compatible API, e.g. "https://api.openai.com/v1"; requests are
 // POSTed to endpoint + "/chat/completions". apiKey may be empty, in which
-// case no Authorization header is sent.
-func NewDescriber(endpoint, apiKey, model string, timeout time.Duration, maxInputChars int) *Describer {
+// case no Authorization header is sent. prompt is the summarization
+// instruction sent before the article text.
+func NewDescriber(endpoint, apiKey, model, prompt string, timeout time.Duration, maxInputChars int) *Describer {
 	return &Describer{
 		endpoint:      strings.TrimSuffix(endpoint, "/"),
 		apiKey:        apiKey,
 		model:         model,
+		prompt:        prompt,
 		timeout:       timeout,
 		maxInputChars: maxInputChars,
 		client:        &http.Client{},
@@ -70,7 +74,7 @@ func (d *Describer) Describe(ctx context.Context, blockTexts []string) (string, 
 	body, err := json.Marshal(chatRequest{
 		Model: d.model,
 		Messages: []chatMessage{
-			{Role: "user", Content: fmt.Sprintf(promptFormat, text)},
+			{Role: "user", Content: fmt.Sprintf(articleFormat, d.prompt, text)},
 		},
 	})
 	if err != nil {

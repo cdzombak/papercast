@@ -35,7 +35,7 @@ func decodeRequest(t *testing.T, r *http.Request) chatRequest {
 func TestDescribeSuccess(t *testing.T) {
 	blocks := []string{"First paragraph.", "Second paragraph."}
 	wantPrompt := fmt.Sprintf(
-		"Summarize the following article in 1 paragraph. Do not include any introductory text, just the summary:\n\n<article>\n%s\n</article>",
+		"Summarize this.\n\n<article>\n%s\n</article>",
 		"First paragraph.\n\nSecond paragraph.")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +68,7 @@ func TestDescribeSuccess(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := NewDescriber(ts.URL, "test-key", "test-model", time.Minute, 0)
+	d := NewDescriber(ts.URL, "test-key", "test-model", "Summarize this.", time.Minute, 0)
 	got, err := d.Describe(context.Background(), blocks)
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
@@ -87,7 +87,7 @@ func TestDescribeNoAuthHeaderWhenAPIKeyEmpty(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := NewDescriber(ts.URL, "", "test-model", time.Minute, 0)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", time.Minute, 0)
 	if _, err := d.Describe(context.Background(), []string{"text"}); err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestDescribeTruncatesAtBlockBoundary(t *testing.T) {
 	defer ts.Close()
 
 	// "aaaa\n\nbbbb" is exactly 10 runes; the third block does not fit.
-	d := NewDescriber(ts.URL, "", "test-model", time.Minute, 10)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", time.Minute, 10)
 	if _, err := d.Describe(context.Background(), []string{"aaaa", "bbbb", "cccc"}); err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestDescribeTruncatesHugeFirstBlockAtRuneBoundary(t *testing.T) {
 	defer ts.Close()
 
 	block := strings.Repeat("héllo wörld ", 10) // multi-byte runes
-	d := NewDescriber(ts.URL, "", "test-model", time.Minute, 7)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", time.Minute, 7)
 	if _, err := d.Describe(context.Background(), []string{block}); err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestDescribeTimeout(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := NewDescriber(ts.URL, "", "test-model", 50*time.Millisecond, 0)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", 50*time.Millisecond, 0)
 	start := time.Now()
 	_, err := d.Describe(context.Background(), []string{"text"})
 	elapsed := time.Since(start)
@@ -165,7 +165,7 @@ func TestDescribeHTTPError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := NewDescriber(ts.URL, "", "test-model", time.Minute, 0)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", time.Minute, 0)
 	_, err := d.Describe(context.Background(), []string{"text"})
 	if err == nil {
 		t.Fatal("Describe returned nil error, want HTTP error")
@@ -187,7 +187,7 @@ func TestDescribeMalformedJSON(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := NewDescriber(ts.URL, "", "test-model", time.Minute, 0)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", time.Minute, 0)
 	_, err := d.Describe(context.Background(), []string{"text"})
 	if err == nil {
 		t.Fatal("Describe returned nil error, want parse error")
@@ -206,7 +206,7 @@ func TestDescribeEmptyChoices(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := NewDescriber(ts.URL, "", "test-model", time.Minute, 0)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", time.Minute, 0)
 	_, err := d.Describe(context.Background(), []string{"text"})
 	if err == nil {
 		t.Fatal("Describe returned nil error, want no-choices error")
@@ -222,7 +222,7 @@ func TestDescribeEmptyContent(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := NewDescriber(ts.URL, "", "test-model", time.Minute, 0)
+	d := NewDescriber(ts.URL, "", "test-model", "Summarize this.", time.Minute, 0)
 	_, err := d.Describe(context.Background(), []string{"text"})
 	if err == nil {
 		t.Fatal("Describe returned nil error, want empty-content error")

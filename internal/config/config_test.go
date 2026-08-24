@@ -56,6 +56,9 @@ func TestLoadValidAppliesDefaults(t *testing.T) {
 	if cfg.LLM.Timeout.Std() != 60*time.Second {
 		t.Errorf("LLM timeout = %v, want 60s", cfg.LLM.Timeout.Std())
 	}
+	if cfg.LLM.Prompt != DefaultLLMPrompt {
+		t.Errorf("LLM prompt = %q, want %q", cfg.LLM.Prompt, DefaultLLMPrompt)
+	}
 	if cfg.TTS.Language != "en-US" {
 		t.Errorf("TTS language = %q, want en-US", cfg.TTS.Language)
 	}
@@ -90,6 +93,7 @@ llm:
   endpoint: https://api.openai.com/v1
   api_key: sk-x
   model: gpt-5.6-luna
+  prompt: Summarize this article in one sentence.
   timeout: 30s
   max_input_chars: 1000
 `
@@ -105,6 +109,9 @@ llm:
 	}
 	if !cfg.LLM.Enabled || cfg.LLM.Timeout.Std() != 30*time.Second {
 		t.Errorf("llm overrides not applied: %+v", cfg.LLM)
+	}
+	if cfg.LLM.Prompt != "Summarize this article in one sentence." {
+		t.Errorf("LLM prompt = %q, want override", cfg.LLM.Prompt)
 	}
 }
 

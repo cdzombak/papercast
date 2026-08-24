@@ -32,6 +32,9 @@ llm:
   endpoint: "https://api.openai.com/v1"
   api_key: "sk-..."
   model: "gpt-5.6-luna"
+  # Instruction sent to the LLM; the article text follows it, wrapped in
+  # <article> tags.
+  prompt: "Summarize the following article in no more than 3 sentences."
   timeout: 60s
   # Maximum article characters sent to the LLM; truncated at a block boundary.
   max_input_chars: 60000

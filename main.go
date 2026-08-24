@@ -386,7 +386,7 @@ func addProcessing(ctx context.Context, cfg *config.Config, logger *slog.Logger,
 	a.Assembler = audio.NewFFmpegAssembler("", "")
 	if cfg.LLM.Enabled {
 		a.Describer = llm.NewDescriber(cfg.LLM.Endpoint, cfg.LLM.APIKey, cfg.LLM.Model,
-			cfg.LLM.Timeout.Std(), cfg.LLM.MaxInputChars)
+			cfg.LLM.Prompt, cfg.LLM.Timeout.Std(), cfg.LLM.MaxInputChars)
 	}
 
 	if err := os.MkdirAll(cfg.Output.Dir, 0o755); err != nil {
