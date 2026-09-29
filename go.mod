@@ -3,14 +3,14 @@ module github.com/cdzombak/papercast
 go 1.26.4
 
 require (
-	cloud.google.com/go/texttospeech v1.22.0
+	cloud.google.com/go/texttospeech v1.23.0
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/eduncan911/podcast v1.4.2
 	github.com/gomodule/oauth1 v0.2.0
 	github.com/neurosnap/sentences v1.1.2
 	golang.org/x/net v0.58.0
 	golang.org/x/term v0.45.0
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.1
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.56.0
 )
